@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --rac-orange: #f95108;
+  --rac-orange-hover: #e04806;
+  --rac-black: #000000;
+  --rac-teal: #61b59c;
+  --rac-teal-dark: #1b363f;
+  --rac-grey: #f8f9fa;
+  --rac-text: #47474a;
+}
+
+html {
+  font-size: 18px;
+}
+
+body, h1, h2, h3, h4, h5, h6, p, span, a, button, input, textarea, select {
+  font-family: fredericSimms, 'fredericSimms Fallback', sans-serif !important;
+}
+
+body {
+  color: var(--rac-text);
+  background: white;
+  overflow-x: hidden;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+.text-white-force {
+  color: white !important;
+}
