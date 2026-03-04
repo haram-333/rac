@@ -1,0 +1,16 @@
+{
+  "admins": [
+    {
+      "id": 1,
+      "username": "rac_admin",
+      "password": "RacPolicy@873!",
+      "full_name": "RAC Insurance Services (Mock)"
+    }
+  ],
+  "policies": [],
+  "stats": {
+    "total_policies": 1284,
+    "active_policies": 4592,
+    "total_admins": 1
+  }
+}
