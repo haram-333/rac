@@ -1,0 +1,223 @@
+# RAC Backend Implementation Plan
+
+## Overview
+
+Build out the backend for the RAC clone to support three core flows:
+1. **Admin Login** — authenticate admin users
+2. **Create Policy** — admin fills the form, policy is saved to DB, confirmation email is sent to the policyholder
+3. **Retrieve Info** — user enters surname + DOB + postcode, and their policy details are displayed
+
+---
+
+## Tech Stack Decisions
+
+| Layer | Choice | Why |
+|---|---|---|
+| **API** | Next.js API Routes (`/src/app/api/...`) | Already using Next.js — zero extra infra |
+| **Database** | SQLite via **better-sqlite3** | File-based, no external DB server needed, perfect for this scale |
+| **Email** | **Nodemailer** with Gmail SMTP | Free, simple, reliable |
+| **Auth** | Simple session token stored in a cookie | Lightweight, no external auth provider needed |
+
+> [!IMPORTANT]
+> You will need a Gmail account with an **App Password** (not your regular password). We will configure this via a `.env.local` file that is never committed to git.
+
+---
+
+## Data Model
+
+### `admins` table
+| Column | Type | Notes |
+|---|---|---|
+| [id](file:///c:/Users/Haram/Desktop/rac%20clone/src/components/BenefitGrid.tsx#37-73) | INTEGER (PK, auto) | |
+| `username` | TEXT (unique) | |
+| `password_hash` | TEXT | bcrypt hashed |
+| `full_name` | TEXT | Displayed as "Insured by" on policy emails |
+
+### `policies` table
+| Column | Type | Notes |
+|---|---|---|
+| [id](file:///c:/Users/Haram/Desktop/rac%20clone/src/components/BenefitGrid.tsx#37-73) | INTEGER (PK, auto) | |
+| `policy_number` | TEXT (unique) | Serialized: `RAC-000001`, `RAC-000002`, etc. |
+| `first_name` | TEXT | |
+| `last_name` | TEXT | |
+| `dob` | TEXT | ISO date string |
+| `license_number` | TEXT | |
+| `occupation` | TEXT | |
+| `address1` | TEXT | |
+| `address2` | TEXT | nullable |
+| `city` | TEXT | |
+| `postcode` | TEXT | |
+| `mobile` | TEXT | |
+| `email` | TEXT | |
+| `vehicle_reg` | TEXT | |
+| `vehicle_make` | TEXT | |
+| `vehicle_model` | TEXT | |
+| `vehicle_year` | INTEGER | |
+| `amount` | REAL | £ amount |
+| `insurance_start` | TEXT | ISO datetime |
+| `insurance_end` | TEXT | ISO datetime |
+| `admin_id` | INTEGER (FK → admins.id) | Who created this policy |
+| `use_alt_email` | INTEGER | 0 or 1 |
+| `created_at` | TEXT | ISO datetime |
+
+---
+
+## Policy Number Generation
+
+- Format: `RAC-XXXXXX` (e.g. `RAC-000001`, `RAC-000002`)
+- On each new policy: query `MAX(id)` from policies table, add 1, zero-pad to 6 digits
+- This keeps numbers serialized and ordered
+
+---
+
+## Email Template
+
+```
+Subject: Your RAC Insurance Policy Confirmation
+
+Hi, [First Name] [Last Name]
+
+Thank you for choosing RAC Short-Term Car Insurance.
+Your policy has been created successfully. Here are your details:
+
+═══════════════════════════════════════
+  POLICY DETAILS
+═══════════════════════════════════════
+
+  Policy Number:    RAC-000042
+  Policy Start:     15 Mar 2026, 09:00 AM
+  Policy End:       17 Mar 2026, 09:00 AM
+  Insured by:       Admin Name
+  Duration:         2 days 0 hours
+  Vehicle:          Tesla Model 3 (LX20 ABC)
+  Amount:           £250.00
+
+═══════════════════════════════════════
+
+If you need to retrieve your policy info, visit:
+https://[your-domain]/retrieve-info
+
+For support, call 0330 159 1111.
+
+RAC Motoring Services
+```
+
+---
+
+## Duration Calculation
+
+```
+diff = end_date - start_date (in milliseconds)
+days  = Math.floor(diff / 86400000)
+hours = Math.floor((diff % 86400000) / 3600000)
+→ "2 days 3 hours"
+```
+
+---
+
+## Proposed Changes
+
+### New Dependencies
+```
+npm install better-sqlite3 nodemailer bcryptjs
+npm install -D @types/better-sqlite3 @types/nodemailer @types/bcryptjs
+```
+
+---
+
+### Database Layer
+
+#### [NEW] [db.ts](file:///c:/Users/Haram/Desktop/rac%20clone/src/lib/db.ts)
+- Initialize SQLite database at `./data/rac.db`
+- Create `admins` and `policies` tables if not exist
+- Seed a default admin account (`admin` / `admin123`)
+- Export the `db` instance
+
+---
+
+### API Routes
+
+#### [NEW] [route.ts](file:///c:/Users/Haram/Desktop/rac%20clone/src/app/api/admin/login/route.ts)
+- `POST /api/admin/login` — validate credentials, set auth cookie, return admin info
+
+#### [NEW] [route.ts](file:///c:/Users/Haram/Desktop/rac%20clone/src/app/api/admin/logout/route.ts)
+- `POST /api/admin/logout` — clear auth cookie
+
+#### [NEW] [route.ts](file:///c:/Users/Haram/Desktop/rac%20clone/src/app/api/policies/route.ts)
+- `POST /api/policies` — create new policy, generate policy number, send email, return created policy
+- `GET /api/policies` — list all policies (admin only, for dashboard stats)
+
+#### [NEW] [route.ts](file:///c:/Users/Haram/Desktop/rac%20clone/src/app/api/retrieve/route.ts)
+- `POST /api/retrieve` — lookup policy by surname + DOB + postcode, return policy details
+
+#### [NEW] [route.ts](file:///c:/Users/Haram/Desktop/rac%20clone/src/app/api/admin/stats/route.ts)
+- `GET /api/admin/stats` — return counts (total accounts, active policies, etc.)
+
+---
+
+### Email Service
+
+#### [NEW] [email.ts](file:///c:/Users/Haram/Desktop/rac%20clone/src/lib/email.ts)
+- Configure Nodemailer with Gmail SMTP (credentials from `.env.local`)
+- `sendPolicyEmail(policyData, adminName)` function
+
+---
+
+### Environment Config
+
+#### [NEW] [.env.local](file:///c:/Users/Haram/Desktop/rac%20clone/.env.local)
+```env
+GMAIL_USER=your-email@gmail.com
+GMAIL_APP_PASSWORD=your-app-password
+ADMIN_SESSION_SECRET=some-random-secret-key
+```
+
+---
+
+### Frontend Updates
+
+#### [MODIFY] [page.tsx](file:///c:/Users/Haram/Desktop/rac%20clone/src/app/admin/login/page.tsx)
+- Wire [handleLogin](file:///c:/Users/Haram/Desktop/rac%20clone/src/app/admin/login/page.tsx#11-16) to `POST /api/admin/login`
+- Show error messages on failed login
+- Redirect to dashboard on success
+
+#### [MODIFY] [page.tsx](file:///c:/Users/Haram/Desktop/rac%20clone/src/app/admin/create-policy/page.tsx)
+- Add form state management for all fields
+- Wire "Create Policy" button to `POST /api/policies`
+- Show success/error feedback with policy number
+
+#### [MODIFY] [page.tsx](file:///c:/Users/Haram/Desktop/rac%20clone/src/app/retrieve-info/page.tsx)
+- Wire form to `POST /api/retrieve`
+- Display returned policy details in a results card below the form
+
+#### [MODIFY] [page.tsx](file:///c:/Users/Haram/Desktop/rac%20clone/src/app/admin/dashboard/page.tsx)
+- Fetch real stats from `GET /api/admin/stats`
+- Display actual account/policy counts
+
+---
+
+## Execution Order
+
+1. Install dependencies
+2. Create `src/lib/db.ts` (database + seed admin)
+3. Create `src/lib/email.ts` (email service)
+4. Create API routes (login → policies → retrieve → stats)
+5. Update frontend pages to wire to APIs
+6. Test end-to-end flow
+7. Push to GitHub
+
+---
+
+## Verification Plan
+
+### Manual Testing
+1. **Admin Login**: Login with `admin` / `admin123` → verify redirect to dashboard
+2. **Create Policy**: Fill form → submit → verify DB entry + email received
+3. **Retrieve Info**: Enter surname + DOB + postcode → verify policy details displayed
+4. **Dashboard Stats**: Verify real counts from the database
+5. **Policy Number**: Create 2+ policies → verify sequential numbering (`RAC-000001`, `RAC-000002`)
+
+### Edge Cases
+- Retrieve with no matching policy → show "No policy found" message
+- Invalid login credentials → show error
+- Missing required fields → form validation
